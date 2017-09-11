@@ -20,5 +20,11 @@
   "bugs": {
     "url": "https://github.com/augusto630/Drone/issues"
   },
-  "homepage": "https://github.com/augusto630/Drone#readme"
+  "homepage": "https://github.com/augusto630/Drone#readme",
+  "dependencies": {
+    "fs": "0.0.1-security",
+    "http": "0.0.0",
+    "math": "0.0.3",
+    "node-gyp": "^3.6.2"
+  }
 }
