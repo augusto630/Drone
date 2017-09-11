@@ -1,0 +1,9 @@
+# when bridge connection doesnt let you connect to internet
+sudo ip link set br0 down|sudo brctl delbr br0|sudo dhclient -v wlan0
+
+Bridge connection bt
+https://github.com/bablokb/pi-btnap
+
+https://www.npmjs.com/package/epoch-charting
+https://gulpjs.com/
+
