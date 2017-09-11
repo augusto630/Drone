@@ -22,9 +22,12 @@
   },
   "homepage": "https://github.com/augusto630/Drone#readme",
   "dependencies": {
+    "chart-stream": "^1.1.1",
+    "csv-write-stream": "^2.0.0",
     "fs": "0.0.1-security",
     "http": "0.0.0",
     "math": "0.0.3",
+    "memory-usage": "^1.2.1",
     "mpu6050-dmp": "0.0.6",
     "node-gyp": "^3.6.2",
     "pigpio": "^0.6.1"
