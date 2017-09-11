@@ -3,7 +3,8 @@ const port = 5000
 
 var http = require("http");
 var drone = require("./drone")
-var fs = require('fs');
+var fs = require("fs");
+var url = require("url");
 
 // fs.readFile('./node_modules/epoch-charting/tests/render/real-time/line.html ', function (err, html) {
 //     if (err) {
@@ -12,7 +13,7 @@ var fs = require('fs');
 exports.start = () => {
 
     http.createServer((request, response) => {
-        var params = url.parse(req.url, true).query;
+        var params = url.parse(request.url, true).query;
 
         // Handle parameters to drone
         drone.update(params);
