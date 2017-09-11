@@ -19,7 +19,7 @@ exports.start = () => {
         drone.update(params);
 
         // Build chart
-        esponse.writeHeader(200, {
+        response.writeHeader(200, {
             "Content-Type": "text/html"
         });
         response.write("ack");

@@ -121,6 +121,8 @@ if (mpu.initialize()) {
         frontLeft.pwmWrite(pwmMinRange);
     }, 2000);
 
+    var dtt = Date.now();
+
     // PID loop
     setInterval(function () {
         let rotation = mpu.getRotation();
@@ -133,11 +135,15 @@ if (mpu.initialize()) {
             let adjusted_roll = attitude.pitch - pitch_offset;
             let adjusted_yaw = attitude.yaw - yaw_offset;
 
-            chart.write(adjusted_pitch + ',' + adjusted_roll + ',' + adjusted_yaw);
-
             let dt = Date.now() - lasttime;
             lasttime = Date.now();
             let throttleOutput = (pwmMaxRange - pwmMinRange) * throttle / 100.0;
+
+            if (Date.now() - dtt > 100) {
+                //console.log("writing to chart" + adjusted_pitch + ',' + adjusted_roll + ',' + adjusted_yaw)
+                chart.write(adjusted_pitch + ',' + adjusted_roll + ',' + adjusted_yaw);
+                dtt = Date.now();
+            }
 
             // Inverted to compensate for physical disposition of Mpu6050
             var pitchOutput = pitch_controller.update(adjusted_pitch, kp, ki, kd);
@@ -163,7 +169,7 @@ if (mpu.initialize()) {
                 console.error(err);
             }
         }
-    }, 5);
+    }, 10);
 
     // Web server loop
     exports.update = (params) => {
