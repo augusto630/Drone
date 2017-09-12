@@ -57,6 +57,16 @@ class Controller {
     }
 
     let error = (this.target - this.currentValue);
+
+    // Deadband
+    let deadband = 0.7
+    if (error < 0 && error > -deadband) {
+      error = 0;
+    }
+    if (error > 0 && error < deadband) {
+      error = 0;
+    }
+
     this.sumError = this.sumError + error * dt;
     if (this.i_max > 0 && Math.abs(this.sumError) > this.i_max) {
       let sumSign = (this.sumError > 0) ? 1 : -1;

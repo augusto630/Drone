@@ -5,11 +5,6 @@ var math = require('math');
 var url = require('url');
 var pigpio = require('pigpio');
 var Pid = require('./pid');
-var chart = require('chart-stream')(function (url) {
-    console.log('Open %s in your browser to see the chart', url)
-})
-
-chart.write('pitch,roll,yaw');
 
 // Frequency in hz
 var pwmFrequency = 400;
@@ -64,9 +59,9 @@ var backRight = pigpio.Gpio(23, pigpio.Gpio.OUTPUT);
 // Global variables
 var throttle = 0.0;
 var pitch = 0.0;
-var pitch_offset = 0.0;
+var pitch_offset = 0.12;
 var roll = 0.0;
-var roll_offset = 0.0;
+var roll_offset = -8.62;
 var yaw = 0.0;
 var yaw_offset = 0.0;
 var started = false;
@@ -109,19 +104,20 @@ if (mpu.initialize()) {
     // Wait for mpu to stabilize
     setTimeout(function () {
         let attitude = mpu.getAttitude();
-        pitch_offset = attitude.pitch;
-        roll_offset = attitude.roll;
+        // pitch_offset = attitude.pitch;
+        // roll_offset = attitude.roll;
         yaw_offset = attitude.yaw;
 
         console.log(pitch_offset + " " + roll_offset + " " + yaw_offset)
+        console.log("pitch,roll,yaw");
+
+        started = true;
 
         frontLeft.pwmWrite(pwmMinRange);
         frontLeft.pwmWrite(pwmMinRange);
         frontLeft.pwmWrite(pwmMinRange);
         frontLeft.pwmWrite(pwmMinRange);
-    }, 2000);
-
-    var dtt = Date.now();
+    }, 20000);
 
     // PID loop
     setInterval(function () {
@@ -129,25 +125,22 @@ if (mpu.initialize()) {
         let attitude = mpu.getAttitude();
 
         // Only set motors after startup
-        if (started) {
+        if (started && updateRequired) {
             // Inverted pitch and roll due to physical disposition of MPU6050
-            let adjusted_pitch = attitude.roll - roll_offset;
-            let adjusted_roll = attitude.pitch - pitch_offset;
-            let adjusted_yaw = attitude.yaw - yaw_offset;
+            let adjusted_pitch = math.round((attitude.roll - roll_offset) * 10) / 10;
+            let adjusted_roll = math.round((attitude.pitch - pitch_offset) * 10) / 10;
+            let adjusted_yaw = math.round((attitude.yaw - yaw_offset) * 10) / 10;
 
             let dt = Date.now() - lasttime;
             lasttime = Date.now();
             let throttleOutput = (pwmMaxRange - pwmMinRange) * throttle / 100.0;
 
-            if (Date.now() - dtt > 100) {
-                //console.log("writing to chart" + adjusted_pitch + ',' + adjusted_roll + ',' + adjusted_yaw)
-                chart.write(adjusted_pitch + ',' + adjusted_roll + ',' + adjusted_yaw);
-                dtt = Date.now();
-            }
+            console.log(adjusted_pitch + "," + adjusted_roll + "," + adjusted_yaw);
 
             // Inverted to compensate for physical disposition of Mpu6050
-            var pitchOutput = pitch_controller.update(adjusted_pitch, kp, ki, kd);
-            var rollOutput = roll_controller.update(adjusted_roll);
+            var pitchOutput = pitch_controller.update(adjusted_pitch);
+            var rollOutput = roll_controller.update(adjusted_roll, kp, ki, kd);
+            var yawOutput = yaw_controller.update(adjusted_yaw);
 
             if (rollOutput < 0) {
                 frontRightOutput = -rollOutput;
@@ -173,12 +166,15 @@ if (mpu.initialize()) {
 
     // Web server loop
     exports.update = (params) => {
-        console.log(params);
+        console.log(params)
 
         // Axis manipulation
         if (!isNaN(params.throttle)) {
             throttle = params.throttle;
-            started = true;
+            if (!updateRequired) {
+                throttle = 0;
+                updateRequired = true;
+            }
         }
 
         if (!isNaN(params.pitch)) {
@@ -205,8 +201,5 @@ if (mpu.initialize()) {
         if (!isNaN(params.dgain)) {
             kd = params.dgain
         }
-
-        // Triggers a motor update
-        updateRequired = true;
     }
 }

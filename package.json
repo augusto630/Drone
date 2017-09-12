@@ -24,6 +24,7 @@
   "dependencies": {
     "chart-stream": "^1.1.1",
     "csv-write-stream": "^2.0.0",
+    "dgram": "^1.0.1",
     "fs": "0.0.1-security",
     "http": "0.0.0",
     "math": "0.0.3",

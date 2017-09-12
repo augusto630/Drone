@@ -2,7 +2,7 @@
 sudo ip link set br0 down|sudo brctl delbr br0|sudo dhclient -v wlan0
 
 # when rebuilding
-sudo npm rebuild --unsafe-perm
+sudo chown -R $(whoami) /home/pi/node/Drone/*|sudo npm rebuild --unsafe-perm
 
 # after/before rebuilding
 sudo chown -R $(whoami) /home/pi/node/Drone/*
