@@ -182,6 +182,11 @@ if (mpu.initialize()) {
                     frontRight.pwmWrite(FilterOutput(frontRightOutput + pwmMinRange + throttleOutput));
                     backLeft.pwmWrite(FilterOutput(backLeftOutput + pwmMinRange + throttleOutput));
                     backRight.pwmWrite(FilterOutput(backRightOutput + pwmMinRange + throttleOutput));
+                } else {
+                    frontLeft.pwmWrite(pwmMinRange);
+                    frontRight.pwmWrite(pwmMinRange);
+                    backLeft.pwmWrite(pwmMinRange);
+                    backRight.pwmWrite(pwmMinRange);
                 }
             } catch (err) {
                 console.error(err);
