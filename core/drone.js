@@ -113,9 +113,9 @@ if (mpu.initialize()) {
         started = true;
 
         frontLeft.pwmWrite(pwmMinRange);
-        frontLeft.pwmWrite(pwmMinRange);
-        frontLeft.pwmWrite(pwmMinRange);
-        frontLeft.pwmWrite(pwmMinRange);
+        frontRight.pwmWrite(pwmMinRange);
+        backLeft.pwmWrite(pwmMinRange);
+        backRight.pwmWrite(pwmMinRange);
     }, 200);
 
     // PID loop
@@ -176,10 +176,13 @@ if (mpu.initialize()) {
             // console.log("fl %d fr %d bl %d br %d", FilterOutput(frontLeftOutput + pwmMinRange + throttleOutput), FilterOutput(frontRightOutput + pwmMinRange + throttleOutput), FilterOutput(backLeftOutput + pwmMinRange + throttleOutput), FilterOutput(backRightOutput + pwmMinRange + throttleOutput));
 
             try {
-                frontLeft.pwmWrite(FilterOutput(frontLeftOutput + pwmMinRange + throttleOutput));
-                frontRight.pwmWrite(FilterOutput(frontRightOutput + pwmMinRange + throttleOutput));
-                backLeft.pwmWrite(FilterOutput(backLeftOutput + pwmMinRange + throttleOutput));
-                backRight.pwmWrite(FilterOutput(backRightOutput + pwmMinRange + throttleOutput));
+                // If no throttle, dont change motors
+                if (throttleOutput > 0) {
+                    frontLeft.pwmWrite(FilterOutput(frontLeftOutput + pwmMinRange + throttleOutput));
+                    frontRight.pwmWrite(FilterOutput(frontRightOutput + pwmMinRange + throttleOutput));
+                    backLeft.pwmWrite(FilterOutput(backLeftOutput + pwmMinRange + throttleOutput));
+                    backRight.pwmWrite(FilterOutput(backRightOutput + pwmMinRange + throttleOutput));
+                }
             } catch (err) {
                 console.error(err);
             }
@@ -188,7 +191,7 @@ if (mpu.initialize()) {
 
     // Web server loop
     exports.update = (params) => {
-        console.log(params)
+        // console.log(params)
 
         // Axis manipulation
         if (!isNaN(params.throttle)) {
@@ -211,7 +214,7 @@ if (mpu.initialize()) {
             yaw = params.yaw
         }
 
-        let controller = yaw_controller;
+        let controller = roll_controller;
 
         // PID constant manipulation 
         if (!isNaN(params.PGain)) {
