@@ -7,17 +7,16 @@ var pigpio = require('pigpio');
 var Pid = require('./pid');
 
 // Frequency in hz
-var pwmFrequency = 400;
+const pwmFrequency = 400;
 
 // Max range of pwm in µs
-var pwmMaxRange = 2000;
-var pwmMinRange = 1000;
+const pwmMaxRange = 2000;
+const pwmMinRange = 1000;
+const pwmRange = pwmMaxRange - pwmMinRange
 
-// Deadband +/- the value indicated
-var deadBand = 0.01;
+const ldt = 1;
+const lmax = 90;
 
-var ldt = 1;
-var lmax = 1500;
 var kp = 0;
 var ki = 0;
 var kd = 0;
@@ -117,7 +116,7 @@ if (mpu.initialize()) {
         frontLeft.pwmWrite(pwmMinRange);
         frontLeft.pwmWrite(pwmMinRange);
         frontLeft.pwmWrite(pwmMinRange);
-    }, 20000);
+    }, 200);
 
     // PID loop
     setInterval(function () {
@@ -135,23 +134,46 @@ if (mpu.initialize()) {
             lasttime = Date.now();
             let throttleOutput = (pwmMaxRange - pwmMinRange) * throttle / 100.0;
 
-            console.log(adjusted_pitch + "," + adjusted_roll + "," + adjusted_yaw);
+            // console.log(adjusted_pitch + "," + adjusted_roll + "," + adjusted_yaw);
 
             // Inverted to compensate for physical disposition of Mpu6050
             var pitchOutput = pitch_controller.update(adjusted_pitch);
-            var rollOutput = roll_controller.update(adjusted_roll, kp, ki, kd);
+            var rollOutput = roll_controller.update(adjusted_roll);
             var yawOutput = yaw_controller.update(adjusted_yaw);
+            // console.log(math.round(pitchOutput * 10) / 10 + "   ,   " + math.round(rollOutput * 10) / 10 + "    ,   " + math.round(yawOutput * 10) / 10);
 
-            if (rollOutput < 0) {
-                frontRightOutput = -rollOutput;
-                backRightOutput = -rollOutput;
-            } else {
-                frontLeftOutput = rollOutput;
-                backLeftOutput = rollOutput;
+            // Convert from -90 to 90 values to 0 to 1500 value
+            var transferFunction = (pidOutputDeg, positiveActuator) => {
+                if (pidOutputDeg > 90) {
+                    pidOutputDeg = 90;
+                }
+                if (pidOutputDeg < -90) {
+                    pidOutputDeg = -90
+                }
+
+                if (positiveActuator && pidOutputDeg < 0) {
+                    return 0;
+                }
+
+                if (!positiveActuator && pidOutputDeg > 0) {
+                    return 0;
+                }
+
+                if (positiveActuator) {
+                    return (pwmRange / 90) * pidOutputDeg
+                } else {
+                    return (pwmRange / 90) * -pidOutputDeg
+                }
             }
 
+            frontRightOutput = transferFunction(rollOutput, false) + transferFunction(pitchOutput, false) + transferFunction(yawOutput, false);
+            backRightOutput = transferFunction(rollOutput, false) + transferFunction(pitchOutput, true) + transferFunction(yawOutput, true);
+
+            frontLeftOutput = transferFunction(rollOutput, true) + transferFunction(pitchOutput, false) + transferFunction(yawOutput, true);
+            backLeftOutput = transferFunction(rollOutput, true) + transferFunction(pitchOutput, true) + transferFunction(yawOutput, false);
+
             // console.log("fl %d fr %d bl %d br %d", frontLeftOutput, frontRightOutput, backLeftOutput, backRightOutput);
-            //console.log("FF fl %d fr %d bl %d br %d", FilterOutput(frontLeftOutput + pwmMinRange + throttleOutput), FilterOutput(frontRightOutput + pwmMinRange + throttleOutput), FilterOutput(backLeftOutput + pwmMinRange + throttleOutput), FilterOutput(backRightOutput + pwmMinRange + throttleOutput));
+            // console.log("fl %d fr %d bl %d br %d", FilterOutput(frontLeftOutput + pwmMinRange + throttleOutput), FilterOutput(frontRightOutput + pwmMinRange + throttleOutput), FilterOutput(backLeftOutput + pwmMinRange + throttleOutput), FilterOutput(backRightOutput + pwmMinRange + throttleOutput));
 
             try {
                 frontLeft.pwmWrite(FilterOutput(frontLeftOutput + pwmMinRange + throttleOutput));
@@ -189,17 +211,22 @@ if (mpu.initialize()) {
             yaw = params.yaw
         }
 
+        let controller = yaw_controller;
+
         // PID constant manipulation 
-        if (!isNaN(params.pgain)) {
-            kp = params.pgain
+        if (!isNaN(params.PGain)) {
+            console.log("PGain");
+            controller.updateKp(params.PGain);
         }
 
-        if (!isNaN(params.igain)) {
-            ki = params.igain
+        if (!isNaN(params.IGain)) {
+            console.log("IGain");
+            controller.updateKi(params.IGain);
         }
 
-        if (!isNaN(params.dgain)) {
-            kd = params.dgain
+        if (!isNaN(params.DGain)) {
+            console.log("DGain");
+            controller.updateKd(params.DGain);
         }
     }
 }

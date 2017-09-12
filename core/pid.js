@@ -59,7 +59,7 @@ class Controller {
     let error = (this.target - this.currentValue);
 
     // Deadband
-    let deadband = 0.7
+    let deadband = 0.5
     if (error < 0 && error > -deadband) {
       error = 0;
     }
@@ -84,6 +84,18 @@ class Controller {
       // console.log("p:%d i:%d d:%d", this.k_p*error, this.k_i*this.sumError, this.k_d*dError)
       return (this.k_p * error) + (this.k_i * this.sumError) + (this.k_d * dError);
     }
+  }
+
+  updateKp(lkp) {
+    this.k_p = lkp
+  }
+
+  updateKi(lki) {
+    this.k_i = lki
+  }
+
+  updateKd(lkd) {
+    this.k_d = lkd
   }
 
   reset() {
