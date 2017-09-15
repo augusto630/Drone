@@ -50,10 +50,10 @@ var yaw_controller = new Pid({
 var mpu6050DeviceId = 68;
 
 // Motor definition
-var frontLeft = pigpio.Gpio(27, pigpio.Gpio.OUTPUT);
-var frontRight = pigpio.Gpio(17, pigpio.Gpio.OUTPUT);
-var backLeft = pigpio.Gpio(22, pigpio.Gpio.OUTPUT);
-var backRight = pigpio.Gpio(23, pigpio.Gpio.OUTPUT);
+var frontLeft = pigpio.Gpio(23, pigpio.Gpio.OUTPUT);
+var frontRight = pigpio.Gpio(24, pigpio.Gpio.OUTPUT);
+var backLeft = pigpio.Gpio(25, pigpio.Gpio.OUTPUT);
+var backRight = pigpio.Gpio(22, pigpio.Gpio.OUTPUT);
 
 // Global variables
 var throttle = 0.0;
