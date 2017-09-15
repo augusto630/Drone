@@ -219,22 +219,26 @@ if (mpu.initialize()) {
             yaw = params.yaw
         }
 
-        let controller = roll_controller;
+        // let controller = roll_controller;
+        // let controller = pitch_controller;
 
         // PID constant manipulation 
         if (!isNaN(params.PGain)) {
             console.log("PGain");
-            controller.updateKp(params.PGain);
+            roll_controller.updateKp(params.PGain);
+            pitch_controller.updateKp(params.PGain);
         }
 
         if (!isNaN(params.IGain)) {
             console.log("IGain");
-            controller.updateKi(params.IGain);
+            roll_controller.updateKp(params.IGain);
+            pitch_controller.updateKp(params.IGain);
         }
 
         if (!isNaN(params.DGain)) {
             console.log("DGain");
-            controller.updateKd(params.DGain);
+            roll_controller.updateKp(params.DGain);
+            pitch_controller.updateKp(params.DGain);
         }
     }
 }
