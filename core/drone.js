@@ -126,15 +126,20 @@ if (mpu.initialize()) {
         // Only set motors after startup
         if (started && updateRequired) {
             // Inverted pitch and roll due to physical disposition of MPU6050
-            let adjusted_pitch = math.round((attitude.roll - roll_offset) * 10) / 10;
-            let adjusted_roll = math.round((attitude.pitch - pitch_offset) * 10) / 10;
-            let adjusted_yaw = math.round((attitude.yaw - yaw_offset) * 10) / 10;
+            // let adjusted_pitch = math.round((attitude.roll - roll_offset) * 10) / 10;
+            // let adjusted_roll = math.round((attitude.pitch - pitch_offset) * 10) / 10;
+            // let adjusted_yaw = math.round((attitude.yaw - yaw_offset) * 10) / 10;
+
+            let adjusted_pitch = math.round(attitude.roll - roll_offset);
+            let adjusted_roll = math.round(attitude.pitch - pitch_offset);
+            let adjusted_yaw = math.round(attitude.yaw - yaw_offset);
 
             let dt = Date.now() - lasttime;
             lasttime = Date.now();
             let throttleOutput = (pwmMaxRange - pwmMinRange) * throttle / 100.0;
 
             // console.log(adjusted_pitch + "," + adjusted_roll + "," + adjusted_yaw);
+            // console.log(attitude.roll + "," + attitude.pitch + "," + attitude.yaw);
 
             // Inverted to compensate for physical disposition of Mpu6050
             var pitchOutput = pitch_controller.update(adjusted_pitch);
@@ -166,11 +171,11 @@ if (mpu.initialize()) {
                 }
             }
 
-            frontRightOutput = transferFunction(rollOutput, false) + transferFunction(pitchOutput, false) + transferFunction(yawOutput, false);
-            backRightOutput = transferFunction(rollOutput, false) + transferFunction(pitchOutput, true) + transferFunction(yawOutput, true);
+            frontRightOutput = transferFunction(rollOutput, false) + transferFunction(pitchOutput, true) + transferFunction(yawOutput, false);
+            backRightOutput = transferFunction(rollOutput, false) + transferFunction(pitchOutput, false) + transferFunction(yawOutput, true);
 
-            frontLeftOutput = transferFunction(rollOutput, true) + transferFunction(pitchOutput, false) + transferFunction(yawOutput, true);
-            backLeftOutput = transferFunction(rollOutput, true) + transferFunction(pitchOutput, true) + transferFunction(yawOutput, false);
+            frontLeftOutput = transferFunction(rollOutput, true) + transferFunction(pitchOutput, true) + transferFunction(yawOutput, true);
+            backLeftOutput = transferFunction(rollOutput, true) + transferFunction(pitchOutput, false) + transferFunction(yawOutput, false);
 
             // console.log("fl %d fr %d bl %d br %d", frontLeftOutput, frontRightOutput, backLeftOutput, backRightOutput);
             // console.log("fl %d fr %d bl %d br %d", FilterOutput(frontLeftOutput + pwmMinRange + throttleOutput), FilterOutput(frontRightOutput + pwmMinRange + throttleOutput), FilterOutput(backLeftOutput + pwmMinRange + throttleOutput), FilterOutput(backRightOutput + pwmMinRange + throttleOutput));
