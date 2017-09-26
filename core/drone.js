@@ -50,10 +50,10 @@ var yaw_controller = new Pid({
 var mpu6050DeviceId = 68;
 
 // Motor definition
-var frontLeft = pigpio.Gpio(23, pigpio.Gpio.OUTPUT);
-var frontRight = pigpio.Gpio(24, pigpio.Gpio.OUTPUT);
-var backLeft = pigpio.Gpio(25, pigpio.Gpio.OUTPUT);
-var backRight = pigpio.Gpio(22, pigpio.Gpio.OUTPUT);
+var frontLeft = pigpio.Gpio(19, pigpio.Gpio.OUTPUT);
+var frontRight = pigpio.Gpio(26, pigpio.Gpio.OUTPUT);
+var backLeft = pigpio.Gpio(16, pigpio.Gpio.OUTPUT);
+var backRight = pigpio.Gpio(20, pigpio.Gpio.OUTPUT);
 
 // Global variables
 var throttle = 0.0;
@@ -110,12 +110,31 @@ if (mpu.initialize()) {
         console.log(pitch_offset + " " + roll_offset + " " + yaw_offset)
         console.log("pitch,roll,yaw");
 
-        started = true;
-
         frontLeft.pwmWrite(pwmMinRange);
         frontRight.pwmWrite(pwmMinRange);
         backLeft.pwmWrite(pwmMinRange);
-        backRight.pwmWrite(pwmMinRange);
+        backRight.pwmWrite(pwmMinRange);    
+
+        started = true;
+
+
+
+        setTimeout(function() {
+            // frontLeft.pwmWrite(0);
+            // frontRight.pwmWrite(0);
+            // backLeft.pwmWrite(0);
+            // backRight.pwmWrite(0);
+
+            setTimeout(function() {
+
+                frontLeft.pwmWrite(pwmMinRange);
+                frontRight.pwmWrite(pwmMinRange);
+                backLeft.pwmWrite(pwmMinRange);
+                backRight.pwmWrite(pwmMinRange);    
+
+                
+            }, 1000);
+        }, 1000);
     }, 200);
 
     // PID loop
@@ -178,15 +197,20 @@ if (mpu.initialize()) {
             backLeftOutput = transferFunction(rollOutput, true) + transferFunction(pitchOutput, false) + transferFunction(yawOutput, false);
 
             // console.log("fl %d fr %d bl %d br %d", frontLeftOutput, frontRightOutput, backLeftOutput, backRightOutput);
-            // console.log("fl %d fr %d bl %d br %d", FilterOutput(frontLeftOutput + pwmMinRange + throttleOutput), FilterOutput(frontRightOutput + pwmMinRange + throttleOutput), FilterOutput(backLeftOutput + pwmMinRange + throttleOutput), FilterOutput(backRightOutput + pwmMinRange + throttleOutput));
+            console.log("fl %d fr %d bl %d br %d", FilterOutput(frontLeftOutput + pwmMinRange + throttleOutput), FilterOutput(frontRightOutput + pwmMinRange + throttleOutput), FilterOutput(backLeftOutput + pwmMinRange + throttleOutput), FilterOutput(backRightOutput + pwmMinRange + throttleOutput));
 
             try {
                 // If no throttle, dont change motors
                 if (throttleOutput > 0) {
-                    frontLeft.pwmWrite(FilterOutput(frontLeftOutput + pwmMinRange + throttleOutput));
-                    frontRight.pwmWrite(FilterOutput(frontRightOutput + pwmMinRange + throttleOutput));
-                    backLeft.pwmWrite(FilterOutput(backLeftOutput + pwmMinRange + throttleOutput));
-                    backRight.pwmWrite(FilterOutput(backRightOutput + pwmMinRange + throttleOutput));
+                    //frontLeft.pwmWrite(FilterOutput(frontLeftOutput + pwmMinRange + throttleOutput));
+                    //frontRight.pwmWrite(FilterOutput(frontRightOutput + pwmMinRange + throttleOutput));
+                    //backLeft.pwmWrite(FilterOutput(backLeftOutput + pwmMinRange + throttleOutput));
+                    //backRight.pwmWrite(FilterOutput(backRightOutput + pwmMinRange + throttleOutput));
+                    
+                    frontLeft.pwmWrite(FilterOutput(pwmMinRange + throttleOutput));
+                    //frontRight.pwmWrite(FilterOutput(pwmMinRange + throttleOutput));
+                    //backLeft.pwmWrite(FilterOutput(pwmMinRange + throttleOutput));
+                    //backRight.pwmWrite(FilterOutput(pwmMinRange + throttleOutput));
                 } else {
                     frontLeft.pwmWrite(pwmMinRange);
                     frontRight.pwmWrite(pwmMinRange);
@@ -194,7 +218,7 @@ if (mpu.initialize()) {
                     backRight.pwmWrite(pwmMinRange);
                 }
             } catch (err) {
-                console.error(err);
+                console.error('Error Writing PWM:' + err);
             }
         }
     }, 10);
