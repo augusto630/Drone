@@ -10,7 +10,7 @@ var timer = new NanoTimer();
 
 // Frequency in hz
 const pwmFrequency = 400;
-const updateFrequency_us = "10m";
+const updateFrequency_us = "5m";
 
 // Max range of pwm in µs
 const pwmMaxRange = 2000;
@@ -101,10 +101,10 @@ var safeRange = function(value, max, min){
 
 // Convert from -90 to 90 values to -1 to 1 value
 var transferFunction = function (value) {
-    let valuemax = 200;
-    let valuemin = -200;
-    let scalemax = -200;
-    let scalemin = 200;
+    let valuemax = 180;
+    let valuemin = -180;
+    let scalemax = -250;
+    let scalemin = 250;
 
     if (value > valuemax){
         value = valuemax
@@ -172,20 +172,41 @@ if (mpu.initialize()) {
                 current_yaw = yaw_offset;
 
                 started = true;
-            }, 10000);
+            }, 20000);
         }, 1000);
     }, (1000));    
+
+    var updateRateCount = 0;
+    var tControl = Date.now();
+    var previousAttitude = mpu.getAttitude();
 
     // PID loop
     var mainFunction = function () {
          let rotation = mpu.getRotation();
          let attitude = mpu.getAttitude();
 
+         if(attitude.pitch != previousAttitude.pitch || attitude.roll != previousAttitude.roll || attitude.yaw || previousAttitude.yaw){
+             updateRateCount++;
+         }
+
+         previousAttitude = attitude;
+         
+         let tNow = Date.now();
+
+         if(tNow - tControl >= 1000){
+            let dt = tNow - tControl;
+
+            console.log("MPU Frequency:" + updateRateCount / dt + " updt:" + updateRateCount + " dt:" + dt);
+
+            tControl = tNow;
+            updateRateCount = 0;
+         }
+
         // Only set motors after startup
         if (started && updateRequired) {
             // Inverted pitch and roll due to physical disposition of MPU6050
-            let adjusted_pitch = attitude.roll - pitch_offset;
-            let adjusted_roll = attitude.pitch - roll_offset;
+            let adjusted_pitch = attitude.roll - roll_offset;
+            let adjusted_roll = attitude.pitch - pitch_offset;
             let adjusted_yaw = attitude.yaw - yaw_offset;
 
             let delta_yaw = adjusted_yaw - current_yaw;
@@ -194,11 +215,11 @@ if (mpu.initialize()) {
                 delta_yaw *= -1;
             }
 
-            current_yaw = adjusted_yaw;
-
             if(delta_yaw > 120){
                 adjusted_yaw = current_yaw;
             }
+
+            current_yaw = adjusted_yaw;
 
             let throttleOutput = (pwmMaxRange - pwmMinRange) * throttle / 100.0;
 
@@ -289,8 +310,8 @@ if (mpu.initialize()) {
 
             let pGain = parseFloat(params.PGain);
 
-            //roll_controller.updateKp(pGain);
-            //pitch_controller.updateKp(pGain);
+            roll_controller.updateKp(pGain);
+            pitch_controller.updateKp(pGain);
             yaw_controller.updateKp(pGain);
         }
 
@@ -299,8 +320,8 @@ if (mpu.initialize()) {
 
             let iGain = parseFloat(params.IGain);
 
-            //roll_controller.updateKi(iGain);
-            //pitch_controller.updateKi(iGain);
+            roll_controller.updateKi(iGain);
+            pitch_controller.updateKi(iGain);
             yaw_controller.updateKi(iGain);
         }
 
@@ -309,8 +330,8 @@ if (mpu.initialize()) {
 
             let dGain = parseFloat(params.DGain);
 
-            //roll_controller.updateKd(dGain);
-            //pitch_controller.updateKd(dGain);
+            roll_controller.updateKd(dGain);
+            pitch_controller.updateKd(dGain);
             yaw_controller.updateKd(dGain);
         }
     }
