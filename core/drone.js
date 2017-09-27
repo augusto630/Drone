@@ -5,44 +5,47 @@ var math = require('math');
 var url = require('url');
 var pigpio = require('pigpio');
 var Pid = require('./pid');
+var NanoTimer = require('nanotimer');
+var timer = new NanoTimer();
 
 // Frequency in hz
 const pwmFrequency = 400;
+const updateFrequency_us = "10m";
 
 // Max range of pwm in µs
 const pwmMaxRange = 2000;
-const pwmMinRange = 1000;
+const pwmMinRange = 1040;
 const pwmRange = pwmMaxRange - pwmMinRange
 
-const ldt = 1;
-const lmax = 90;
+const lmax = 10000;
 
 var kp = 0;
 var ki = 0;
 var kd = 0;
 
 var pitch_controller = new Pid({
-    k_p: 0.0,
-    k_i: 0.0,
-    k_d: 0.0,
-    dt: ldt,
-    i_max: lmax
+    k_p: 0.5,
+    k_i: 0.0002,
+    k_d: 64.5,
+    i_max: lmax,
+    flag: "pitch"
 });
 
 var roll_controller = new Pid({
-    k_p: 0.0,
-    k_i: 0.0,
-    k_d: 0.0,
-    dt: ldt,
-    i_max: lmax
+    k_p: 0.5,
+    k_i: 0.0002,
+    k_d: 64.5,
+    i_max: lmax,
+    flag: "roll"
 });
 
+
 var yaw_controller = new Pid({
-    k_p: 0.0,
-    k_i: 0.0,
-    k_d: 0.0,
-    dt: ldt,
-    i_max: lmax
+    k_p: 0.5,
+    k_i: 0.0002,
+    k_d: 64.5,
+    i_max: lmax,
+    flag: "yaw"
 });
 
 
@@ -50,17 +53,17 @@ var yaw_controller = new Pid({
 var mpu6050DeviceId = 68;
 
 // Motor definition
-var frontLeft = pigpio.Gpio(19, pigpio.Gpio.OUTPUT);
-var frontRight = pigpio.Gpio(26, pigpio.Gpio.OUTPUT);
-var backLeft = pigpio.Gpio(16, pigpio.Gpio.OUTPUT);
-var backRight = pigpio.Gpio(20, pigpio.Gpio.OUTPUT);
+var frontLeft = pigpio.Gpio(17, pigpio.Gpio.OUTPUT); // Amarelo
+var frontRight = pigpio.Gpio(4, pigpio.Gpio.OUTPUT); // Verde
+var backLeft = pigpio.Gpio(27, pigpio.Gpio.OUTPUT); // Laranja
+var backRight = pigpio.Gpio(22, pigpio.Gpio.OUTPUT); // Azul
 
 // Global variables
 var throttle = 0.0;
 var pitch = 0.0;
-var pitch_offset = 0.12;
+var pitch_offset = 2.9//0.12;
 var roll = 0.0;
-var roll_offset = -8.62;
+var roll_offset = 0.04//-8.62;
 var yaw = 0.0;
 var yaw_offset = 0.0;
 var started = false;
@@ -75,9 +78,9 @@ var backRightOutput = 0;
 function FilterOutput(output) {
     let local = 0;
     if (output < pwmMinRange) {
-        local = pwmMinRange;
+        local = pwmMinRange + 20;
     } else if (output > pwmMaxRange) {
-        local = pwmMaxRange;
+        local = pwmMaxRange - 300;
     } else {
         local = output;
     }
@@ -85,8 +88,47 @@ function FilterOutput(output) {
     return parseInt(local);
 }
 
+var safeRange = function(value, max, min){
+    let localValue;
+    if(value > max){
+        localValue = max;
+    }else if (value < min){
+        localValue = min;
+    }else{
+        localValue = value;
+    }    
+}
+
+// Convert from -90 to 90 values to -1 to 1 value
+var transferFunction = function (value) {
+    let valuemax = 200;
+    let valuemin = -200;
+    let scalemax = -200;
+    let scalemin = 200;
+
+    if (value > valuemax){
+        value = valuemax
+    } else if(value < valuemin){
+        value = valuemin
+    }
+
+    let vPerc = (value - valuemin) / (valuemax - valuemin);
+    let bigSpan = vPerc * (scalemax - scalemin);
+
+    let retVal = scalemin + bigSpan;
+
+    return retVal;
+}
+
+pitch_controller.setTransferFunction(transferFunction);
+roll_controller.setTransferFunction(transferFunction);
+yaw_controller.setTransferFunction(transferFunction);
+
+var current_yaw = 0;
+
 // Initialize MPU6050
 if (mpu.initialize()) {
+    
     // Setup pwm
     frontLeft.pwmRange(pwmMaxRange + 500);
     frontLeft.pwmFrequency(pwmFrequency);
@@ -100,128 +142,109 @@ if (mpu.initialize()) {
     backRight.pwmRange(pwmMaxRange + 500);
     backRight.pwmFrequency(pwmFrequency);
 
-    // Wait for mpu to stabilize
-    setTimeout(function () {
-        let attitude = mpu.getAttitude();
-        // pitch_offset = attitude.pitch;
-        // roll_offset = attitude.roll;
-        yaw_offset = attitude.yaw;
+    console.log(pitch_offset + " " + roll_offset + " " + yaw_offset)
+    console.log("pitch,roll,yaw");
 
-        console.log(pitch_offset + " " + roll_offset + " " + yaw_offset)
-        console.log("pitch,roll,yaw");
-
-        frontLeft.pwmWrite(pwmMinRange);
-        frontRight.pwmWrite(pwmMinRange);
-        backLeft.pwmWrite(pwmMinRange);
-        backRight.pwmWrite(pwmMinRange);    
-
-        started = true;
-
-
+    setTimeout(function() {
+        frontLeft.pwmWrite(0);
+        frontRight.pwmWrite(0);
+        backLeft.pwmWrite(0);
+        backRight.pwmWrite(0);    
 
         setTimeout(function() {
-            // frontLeft.pwmWrite(0);
-            // frontRight.pwmWrite(0);
-            // backLeft.pwmWrite(0);
-            // backRight.pwmWrite(0);
+            frontLeft.pwmWrite(2000);
+            frontRight.pwmWrite(2000);
+            backLeft.pwmWrite(2000);
+            backRight.pwmWrite(2000);    
 
             setTimeout(function() {
+                frontLeft.pwmWrite(1000);
+                frontRight.pwmWrite(1000);
+                backLeft.pwmWrite(1000);
+                backRight.pwmWrite(1000);  
 
-                frontLeft.pwmWrite(pwmMinRange);
-                frontRight.pwmWrite(pwmMinRange);
-                backLeft.pwmWrite(pwmMinRange);
-                backRight.pwmWrite(pwmMinRange);    
+                let attitude = mpu.getAttitude();
 
-                
-            }, 1000);
+                pitch_offset = attitude.pitch;
+                roll_offset = attitude.roll;
+                yaw_offset = attitude.yaw;
+
+                current_yaw = yaw_offset;
+
+                started = true;
+            }, 10000);
         }, 1000);
-    }, 200);
+    }, (1000));    
 
     // PID loop
-    setInterval(function () {
-        let rotation = mpu.getRotation();
-        let attitude = mpu.getAttitude();
+    var mainFunction = function () {
+         let rotation = mpu.getRotation();
+         let attitude = mpu.getAttitude();
 
         // Only set motors after startup
         if (started && updateRequired) {
             // Inverted pitch and roll due to physical disposition of MPU6050
-            // let adjusted_pitch = math.round((attitude.roll - roll_offset) * 10) / 10;
-            // let adjusted_roll = math.round((attitude.pitch - pitch_offset) * 10) / 10;
-            // let adjusted_yaw = math.round((attitude.yaw - yaw_offset) * 10) / 10;
+            let adjusted_pitch = attitude.roll - pitch_offset;
+            let adjusted_roll = attitude.pitch - roll_offset;
+            let adjusted_yaw = attitude.yaw - yaw_offset;
 
-            let adjusted_pitch = math.round(attitude.roll - roll_offset);
-            let adjusted_roll = math.round(attitude.pitch - pitch_offset);
-            let adjusted_yaw = math.round(attitude.yaw - yaw_offset);
+            let delta_yaw = adjusted_yaw - current_yaw;
 
-            let dt = Date.now() - lasttime;
-            lasttime = Date.now();
+            if(delta_yaw < 0){
+                delta_yaw *= -1;
+            }
+
+            current_yaw = adjusted_yaw;
+
+            if(delta_yaw > 120){
+                adjusted_yaw = current_yaw;
+            }
+
             let throttleOutput = (pwmMaxRange - pwmMinRange) * throttle / 100.0;
 
-            // console.log(adjusted_pitch + "," + adjusted_roll + "," + adjusted_yaw);
-            // console.log(attitude.roll + "," + attitude.pitch + "," + attitude.yaw);
-
-            // Inverted to compensate for physical disposition of Mpu6050
             var pitchOutput = pitch_controller.update(adjusted_pitch);
             var rollOutput = roll_controller.update(adjusted_roll);
             var yawOutput = yaw_controller.update(adjusted_yaw);
-            // console.log(math.round(pitchOutput * 10) / 10 + "   ,   " + math.round(rollOutput * 10) / 10 + "    ,   " + math.round(yawOutput * 10) / 10);
 
-            // Convert from -90 to 90 values to 0 to 1500 value
-            var transferFunction = (pidOutputDeg, positiveActuator) => {
-                if (pidOutputDeg > 90) {
-                    pidOutputDeg = 90;
-                }
-                if (pidOutputDeg < -90) {
-                    pidOutputDeg = -90
-                }
+            frontRightOutput = -rollOutput + pitchOutput + yawOutput;
+            backRightOutput = -rollOutput - pitchOutput - yawOutput;
 
-                if (positiveActuator && pidOutputDeg < 0) {
-                    return 0;
-                }
+            frontLeftOutput = rollOutput + pitchOutput - yawOutput;
+            backLeftOutput = rollOutput - pitchOutput + yawOutput;
 
-                if (!positiveActuator && pidOutputDeg > 0) {
-                    return 0;
-                }
-
-                if (positiveActuator) {
-                    return (pwmRange / 90) * pidOutputDeg
-                } else {
-                    return (pwmRange / 90) * -pidOutputDeg
-                }
-            }
-
-            frontRightOutput = transferFunction(rollOutput, false) + transferFunction(pitchOutput, true) + transferFunction(yawOutput, false);
-            backRightOutput = transferFunction(rollOutput, false) + transferFunction(pitchOutput, false) + transferFunction(yawOutput, true);
-
-            frontLeftOutput = transferFunction(rollOutput, true) + transferFunction(pitchOutput, true) + transferFunction(yawOutput, true);
-            backLeftOutput = transferFunction(rollOutput, true) + transferFunction(pitchOutput, false) + transferFunction(yawOutput, false);
-
-            // console.log("fl %d fr %d bl %d br %d", frontLeftOutput, frontRightOutput, backLeftOutput, backRightOutput);
-            console.log("fl %d fr %d bl %d br %d", FilterOutput(frontLeftOutput + pwmMinRange + throttleOutput), FilterOutput(frontRightOutput + pwmMinRange + throttleOutput), FilterOutput(backLeftOutput + pwmMinRange + throttleOutput), FilterOutput(backRightOutput + pwmMinRange + throttleOutput));
+            //console.log("fl %d fr %d bl %d br %d", frontLeftOutput, frontRightOutput, backLeftOutput, backRightOutput);
 
             try {
                 // If no throttle, dont change motors
                 if (throttleOutput > 0) {
-                    //frontLeft.pwmWrite(FilterOutput(frontLeftOutput + pwmMinRange + throttleOutput));
-                    //frontRight.pwmWrite(FilterOutput(frontRightOutput + pwmMinRange + throttleOutput));
-                    //backLeft.pwmWrite(FilterOutput(backLeftOutput + pwmMinRange + throttleOutput));
-                    //backRight.pwmWrite(FilterOutput(backRightOutput + pwmMinRange + throttleOutput));
-                    
-                    frontLeft.pwmWrite(FilterOutput(pwmMinRange + throttleOutput));
-                    //frontRight.pwmWrite(FilterOutput(pwmMinRange + throttleOutput));
-                    //backLeft.pwmWrite(FilterOutput(pwmMinRange + throttleOutput));
-                    //backRight.pwmWrite(FilterOutput(pwmMinRange + throttleOutput));
+                    frontLeft.pwmWrite(FilterOutput(frontLeftOutput + pwmMinRange + throttleOutput));
+                    frontRight.pwmWrite(FilterOutput(frontRightOutput + pwmMinRange + throttleOutput));
+                    backLeft.pwmWrite(FilterOutput(backLeftOutput + pwmMinRange + throttleOutput));
+                    backRight.pwmWrite(FilterOutput(backRightOutput + pwmMinRange + throttleOutput));
                 } else {
-                    frontLeft.pwmWrite(pwmMinRange);
-                    frontRight.pwmWrite(pwmMinRange);
-                    backLeft.pwmWrite(pwmMinRange);
-                    backRight.pwmWrite(pwmMinRange);
+                    frontLeft.pwmWrite(1000);
+                    frontRight.pwmWrite(1000);
+                    backLeft.pwmWrite(1000);
+                    backRight.pwmWrite(1000);
                 }
             } catch (err) {
-                console.error('Error Writing PWM:' + err);
+                console.error('Error Writing PWM:' + err + " Values: fl %d fr %d bl %d br %d", FilterOutput(frontLeftOutput + pwmMinRange + throttleOutput), FilterOutput(frontRightOutput + pwmMinRange + throttleOutput), FilterOutput(backLeftOutput + pwmMinRange + throttleOutput), FilterOutput(backRightOutput + pwmMinRange + throttleOutput));
             }
         }
-    }, 10);
+    }
+
+    var adjustYaw = function(){
+        let attitude = mpu.getAttitude();
+        yaw_offset = attitude.yaw;
+    }
+
+    setInterval(adjustYaw, 500);
+
+    timer.setInterval(mainFunction,"", updateFrequency_us, function(err) {
+        if(err) {
+            consol.error("Error on timer.setInterval" + err);
+        }
+    });
 
     // Web server loop
     exports.update = (params) => {
@@ -229,7 +252,16 @@ if (mpu.initialize()) {
 
         // Axis manipulation
         if (!isNaN(params.throttle)) {
-            throttle = params.throttle;
+            let localThrottle = parseFloat(params.throttle);
+
+            if(throttle == 0 && localThrottle > 0){
+                pitch_controller.reset();
+                roll_controller.reset();
+                yaw_controller.reset();
+            }
+
+            throttle = localThrottle;
+
             if (!updateRequired) {
                 throttle = 0;
                 updateRequired = true;
@@ -237,37 +269,49 @@ if (mpu.initialize()) {
         }
 
         if (!isNaN(params.pitch)) {
-            pitch = params.pitch
+            let pitch = parseFloat(params.pitch)
+            pitch_controller.setTarget(pitch);
         }
 
         if (!isNaN(params.roll)) {
-            roll = params.roll
+            let roll = parseFloat(params.roll);
+            roll_controller.setTarget(roll);
         }
 
         if (!isNaN(params.yaw)) {
-            yaw = params.yaw
+            let yaw = parseFloat(params.yaw)
+            yaw_controller.setTarget(yaw);
         }
-
-        // let controller = roll_controller;
-        // let controller = pitch_controller;
 
         // PID constant manipulation 
         if (!isNaN(params.PGain)) {
-            console.log("PGain");
-            roll_controller.updateKp(params.PGain);
-            pitch_controller.updateKp(params.PGain);
+            // console.log("PGain");
+
+            let pGain = parseFloat(params.PGain);
+
+            //roll_controller.updateKp(pGain);
+            //pitch_controller.updateKp(pGain);
+            yaw_controller.updateKp(pGain);
         }
 
         if (!isNaN(params.IGain)) {
-            console.log("IGain");
-            roll_controller.updateKp(params.IGain);
-            pitch_controller.updateKp(params.IGain);
+            // console.log("IGain");
+
+            let iGain = parseFloat(params.IGain);
+
+            //roll_controller.updateKi(iGain);
+            //pitch_controller.updateKi(iGain);
+            yaw_controller.updateKi(iGain);
         }
 
         if (!isNaN(params.DGain)) {
-            console.log("DGain");
-            roll_controller.updateKp(params.DGain);
-            pitch_controller.updateKp(params.DGain);
+            // console.log("DGain");
+
+            let dGain = parseFloat(params.DGain);
+
+            //roll_controller.updateKd(dGain);
+            //pitch_controller.updateKd(dGain);
+            yaw_controller.updateKd(dGain);
         }
     }
 }
