@@ -10,7 +10,7 @@ var timer = new NanoTimer();
 
 // Frequency in hz
 const pwmFrequency = 400;
-const updateFrequency_us = "5m";
+const updateFrequency_us = "3m";
 
 // Max range of pwm in µs
 const pwmMaxRange = 2000;
@@ -61,9 +61,9 @@ var backRight = pigpio.Gpio(22, pigpio.Gpio.OUTPUT); // Azul
 // Global variables
 var throttle = 0.0;
 var pitch = 0.0;
-var pitch_offset = 2.9//0.12;
+var pitch_offset = 0//0.12;
 var roll = 0.0;
-var roll_offset = 0.04//-8.62;
+var roll_offset = 0//-8.62;
 var yaw = 0.0;
 var yaw_offset = 0.0;
 var started = false;
@@ -126,57 +126,60 @@ yaw_controller.setTransferFunction(transferFunction);
 
 var current_yaw = 0;
 
-// Initialize MPU6050
-if (mpu.initialize()) {
-    
-    // Setup pwm
-    frontLeft.pwmRange(pwmMaxRange + 500);
-    frontLeft.pwmFrequency(pwmFrequency);
+// Setup pwm
+frontLeft.pwmRange(pwmMaxRange + 500);
+frontLeft.pwmFrequency(pwmFrequency);
 
-    frontRight.pwmRange(pwmMaxRange + 500);
-    frontRight.pwmFrequency(pwmFrequency);
+frontRight.pwmRange(pwmMaxRange + 500);
+frontRight.pwmFrequency(pwmFrequency);
 
-    backLeft.pwmRange(pwmMaxRange + 500);
-    backLeft.pwmFrequency(pwmFrequency);
+backLeft.pwmRange(pwmMaxRange + 500);
+backLeft.pwmFrequency(pwmFrequency);
 
-    backRight.pwmRange(pwmMaxRange + 500);
-    backRight.pwmFrequency(pwmFrequency);
+backRight.pwmRange(pwmMaxRange + 500);
+backRight.pwmFrequency(pwmFrequency);
 
-    console.log(pitch_offset + " " + roll_offset + " " + yaw_offset)
-    console.log("pitch,roll,yaw");
+setTimeout(function() {
+    frontLeft.pwmWrite(0);
+    frontRight.pwmWrite(0);
+    backLeft.pwmWrite(0);
+    backRight.pwmWrite(0);    
 
     setTimeout(function() {
-        frontLeft.pwmWrite(0);
-        frontRight.pwmWrite(0);
-        backLeft.pwmWrite(0);
-        backRight.pwmWrite(0);    
+        frontLeft.pwmWrite(2000);
+        frontRight.pwmWrite(2000);
+        backLeft.pwmWrite(2000);
+        backRight.pwmWrite(2000);    
+    }, 1000);
+}, 1000);  
 
-        setTimeout(function() {
-            frontLeft.pwmWrite(2000);
-            frontRight.pwmWrite(2000);
-            backLeft.pwmWrite(2000);
-            backRight.pwmWrite(2000);    
+// console.log("starting calibration...");
+// mpu.calibrate();
+// console.log("calibration ended...");
 
-            setTimeout(function() {
-                frontLeft.pwmWrite(1000);
-                frontRight.pwmWrite(1000);
-                backLeft.pwmWrite(1000);
-                backRight.pwmWrite(1000);  
+// Initialize MPU6050
+if (mpu.initialize()) {
 
-                let attitude = mpu.getAttitude();
+    frontLeft.pwmWrite(1000);
+    frontRight.pwmWrite(1000);
+    backLeft.pwmWrite(1000);
+    backRight.pwmWrite(1000);  
 
-                pitch_offset = attitude.pitch;
-                roll_offset = attitude.roll;
-                yaw_offset = attitude.yaw;
+    let attitude = mpu.getAttitude();
 
-                current_yaw = yaw_offset;
+    // pitch_offset = attitude.pitch;
+    // roll_offset = attitude.roll;
+    yaw_offset = attitude.yaw;
 
-                started = true;
-            }, 20000);
-        }, 1000);
-    }, (1000));    
+    current_yaw = yaw_offset;
+
+    started = true;
+
+    console.log(pitch_offset + " " + roll_offset + " " + yaw_offset)
+    console.log("pitch,roll,yaw");  
 
     var updateRateCount = 0;
+    var mainLoopRateCount = 0;
     var tControl = Date.now();
     var previousAttitude = mpu.getAttitude();
 
@@ -185,21 +188,25 @@ if (mpu.initialize()) {
          let rotation = mpu.getRotation();
          let attitude = mpu.getAttitude();
 
-         if(attitude.pitch != previousAttitude.pitch || attitude.roll != previousAttitude.roll || attitude.yaw || previousAttitude.yaw){
+         if(attitude.pitch != previousAttitude.pitch || attitude.roll != previousAttitude.roll){
              updateRateCount++;
          }
 
          previousAttitude = attitude;
+
+         mainLoopRateCount++;
          
          let tNow = Date.now();
 
          if(tNow - tControl >= 1000){
             let dt = tNow - tControl;
 
-            console.log("MPU Frequency:" + updateRateCount / dt + " updt:" + updateRateCount + " dt:" + dt);
+            console.log("MPU Frequency:" + updateRateCount / (dt / 1000) + " updt:" + updateRateCount + " dt:" + dt + " p:" + attitude.pitch + " r:" + attitude.roll + " y:" + attitude.yaw);
+            console.log("Main loop Frequency:" + mainLoopRateCount / (dt / 1000) + " updt:" + mainLoopRateCount);
 
             tControl = tNow;
             updateRateCount = 0;
+            mainLoopRateCount = 0;
          }
 
         // Only set motors after startup
