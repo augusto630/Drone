@@ -8,9 +8,11 @@ var Pid = require('./pid');
 var NanoTimer = require('nanotimer');
 var timer = new NanoTimer();
 
+var AHRS = require('ahrs');
+
 // Frequency in hz
 const pwmFrequency = 400;
-const updateFrequency_us = "3m";
+const updateFrequency_us = "5m";
 
 // Max range of pwm in µs
 const pwmMaxRange = 2000;
@@ -101,10 +103,12 @@ var safeRange = function(value, max, min){
 
 // Convert from -90 to 90 values to -1 to 1 value
 var transferFunction = function (value) {
-    let valuemax = 180;
-    let valuemin = -180;
-    let scalemax = -250;
-    let scalemin = 250;
+    return value
+
+    let valuemax = 1000;
+    let valuemin = -1000;
+    let scalemax = -350;
+    let scalemin = 350;
 
     if (value > valuemax){
         value = valuemax
@@ -139,17 +143,53 @@ backLeft.pwmFrequency(pwmFrequency);
 backRight.pwmRange(pwmMaxRange + 500);
 backRight.pwmFrequency(pwmFrequency);
 
+frontLeft.pwmWrite(0);
+frontRight.pwmWrite(0);
+backLeft.pwmWrite(0);
+backRight.pwmWrite(0);    
+
 setTimeout(function() {
-    frontLeft.pwmWrite(0);
-    frontRight.pwmWrite(0);
-    backLeft.pwmWrite(0);
-    backRight.pwmWrite(0);    
+    frontLeft.pwmWrite(2000);
+    frontRight.pwmWrite(2000);
+    backLeft.pwmWrite(2000);
+    backRight.pwmWrite(2000);   
 
     setTimeout(function() {
-        frontLeft.pwmWrite(2000);
-        frontRight.pwmWrite(2000);
-        backLeft.pwmWrite(2000);
-        backRight.pwmWrite(2000);    
+        frontLeft.pwmWrite(1000);
+        frontRight.pwmWrite(1000);
+        backLeft.pwmWrite(1000);
+        backRight.pwmWrite(1000);  
+    
+        let attitude = mpu.getAttitude();
+
+        yaw_offset = attitude.yaw;    
+        current_yaw = yaw_offset;    
+
+        setTimeout(function() {
+            frontLeft.pwmWrite(1050);
+
+            setTimeout(function() {
+                frontLeft.pwmWrite(1000);
+                frontRight.pwmWrite(1050);
+
+                setTimeout(function() {
+                    frontRight.pwmWrite(1000);
+                    backLeft.pwmWrite(1050);
+
+                    setTimeout(function() {
+                        backLeft.pwmWrite(1000);
+                        backRight.pwmWrite(1050);
+
+                        setTimeout(function() {
+                            backRight.pwmWrite(1000);
+                            started = true;
+                        }, 1000);
+                    }, 1000);
+                }, 1000);
+            }, 1000);
+        }, 1500);
+    
+        console.log("Yaw offset: " + yaw_offset);        
     }, 1000);
 }, 1000);  
 
@@ -159,25 +199,6 @@ setTimeout(function() {
 
 // Initialize MPU6050
 if (mpu.initialize()) {
-
-    frontLeft.pwmWrite(1000);
-    frontRight.pwmWrite(1000);
-    backLeft.pwmWrite(1000);
-    backRight.pwmWrite(1000);  
-
-    let attitude = mpu.getAttitude();
-
-    // pitch_offset = attitude.pitch;
-    // roll_offset = attitude.roll;
-    yaw_offset = attitude.yaw;
-
-    current_yaw = yaw_offset;
-
-    started = true;
-
-    console.log(pitch_offset + " " + roll_offset + " " + yaw_offset)
-    console.log("pitch,roll,yaw");  
-
     var updateRateCount = 0;
     var mainLoopRateCount = 0;
     var tControl = Date.now();
@@ -198,7 +219,7 @@ if (mpu.initialize()) {
          
          let tNow = Date.now();
 
-         if(tNow - tControl >= 1000){
+         if(tNow - tControl >= 3000){
             let dt = tNow - tControl;
 
             console.log("MPU Frequency:" + updateRateCount / (dt / 1000) + " updt:" + updateRateCount + " dt:" + dt + " p:" + attitude.pitch + " r:" + attitude.roll + " y:" + attitude.yaw);
@@ -212,19 +233,21 @@ if (mpu.initialize()) {
         // Only set motors after startup
         if (started && updateRequired) {
             // Inverted pitch and roll due to physical disposition of MPU6050
-            let adjusted_pitch = attitude.roll - roll_offset;
-            let adjusted_roll = attitude.pitch - pitch_offset;
-            let adjusted_yaw = attitude.yaw - yaw_offset;
+            let adjusted_pitch = attitude.pitch - pitch_offset;
+            let adjusted_roll = (attitude.roll - roll_offset) * -1;
+            let adjusted_yaw = (attitude.yaw - yaw_offset);
 
             let delta_yaw = adjusted_yaw - current_yaw;
 
-            if(delta_yaw < 0){
-                delta_yaw *= -1;
-            }
+            // if(delta_yaw < 0){
+            //     delta_yaw *= -1;
+            // }
 
-            if(delta_yaw > 120){
-                adjusted_yaw = current_yaw;
-            }
+            // if(delta_yaw > 120){
+            //     adjusted_yaw = current_yaw;
+            // }
+
+            //console.log("pitch %d roll %d yaw %d", adjusted_pitch, adjusted_roll, adjusted_yaw);
 
             current_yaw = adjusted_yaw;
 
@@ -234,11 +257,11 @@ if (mpu.initialize()) {
             var rollOutput = roll_controller.update(adjusted_roll);
             var yawOutput = yaw_controller.update(adjusted_yaw);
 
-            frontRightOutput = -rollOutput + pitchOutput + yawOutput;
-            backRightOutput = -rollOutput - pitchOutput - yawOutput;
+            frontRightOutput = rollOutput + pitchOutput + yawOutput;
+            backRightOutput = rollOutput - pitchOutput - yawOutput;
 
-            frontLeftOutput = rollOutput + pitchOutput - yawOutput;
-            backLeftOutput = rollOutput - pitchOutput + yawOutput;
+            frontLeftOutput = -rollOutput + pitchOutput - yawOutput;
+            backLeftOutput = -rollOutput - pitchOutput + yawOutput;
 
             //console.log("fl %d fr %d bl %d br %d", frontLeftOutput, frontRightOutput, backLeftOutput, backRightOutput);
 
@@ -264,9 +287,11 @@ if (mpu.initialize()) {
     var adjustYaw = function(){
         let attitude = mpu.getAttitude();
         yaw_offset = attitude.yaw;
+
+        yaw_controller.reset();
     }
 
-    setInterval(adjustYaw, 500);
+    setInterval(adjustYaw, 1000);
 
     timer.setInterval(mainFunction,"", updateFrequency_us, function(err) {
         if(err) {
@@ -307,7 +332,7 @@ if (mpu.initialize()) {
         }
 
         if (!isNaN(params.yaw)) {
-            let yaw = parseFloat(params.yaw)
+            let yaw = parseFloat(params.yaw);
             yaw_controller.setTarget(yaw);
         }
 

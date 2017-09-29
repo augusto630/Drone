@@ -74,7 +74,7 @@ class Controller {
     let error = (this.target - this.currentValue);
 
     // Deadband
-    let deadband = 0.5
+    let deadband = 0.3
     if (error < 0 && error > -deadband) {
       error = 0;
       this.sumError = 0;
