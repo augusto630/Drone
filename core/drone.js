@@ -19,33 +19,34 @@ const pwmMaxRange = 2000;
 const pwmMinRange = 1040;
 const pwmRange = pwmMaxRange - pwmMinRange
 
-const lmax = 10000;
+const lmax = 1000;
 
 var kp = 0;
 var ki = 0;
 var kd = 0;
+var tpa = 0.75;
 
 var pitch_controller = new Pid({
-    k_p: 0.5,
-    k_i: 0.0002,
-    k_d: 64.5,
+    k_p: 2.144,
+    k_i: 0.0012,
+    k_d: 300,
     i_max: lmax,
     flag: "pitch"
 });
 
 var roll_controller = new Pid({
-    k_p: 0.5,
-    k_i: 0.0002,
-    k_d: 64.5,
+    k_p: 2.144,
+    k_i: 0.0012,
+    k_d: 300,
     i_max: lmax,
     flag: "roll"
 });
 
 
 var yaw_controller = new Pid({
-    k_p: 0.5,
-    k_i: 0.0002,
-    k_d: 64.5,
+    k_p: 2.144,
+    k_i: 0.0012,
+    k_d: 300,
     i_max: lmax,
     flag: "yaw"
 });
@@ -59,6 +60,8 @@ var frontLeft = pigpio.Gpio(17, pigpio.Gpio.OUTPUT); // Amarelo
 var frontRight = pigpio.Gpio(4, pigpio.Gpio.OUTPUT); // Verde
 var backLeft = pigpio.Gpio(27, pigpio.Gpio.OUTPUT); // Laranja
 var backRight = pigpio.Gpio(22, pigpio.Gpio.OUTPUT); // Azul
+
+var naze = pigpio.Gpio(23, pigpio.Gpio.OUTPUT);
 
 // Global variables
 var throttle = 0.0;
@@ -82,7 +85,7 @@ function FilterOutput(output) {
     if (output < pwmMinRange) {
         local = pwmMinRange + 20;
     } else if (output > pwmMaxRange) {
-        local = pwmMaxRange - 300;
+        local = pwmMaxRange - 200;
     } else {
         local = output;
     }
@@ -103,25 +106,25 @@ var safeRange = function(value, max, min){
 
 // Convert from -90 to 90 values to -1 to 1 value
 var transferFunction = function (value) {
-    return value
+    return value;
 
-    let valuemax = 1000;
-    let valuemin = -1000;
-    let scalemax = -350;
-    let scalemin = 350;
+    // let valuemax = 1000;
+    // let valuemin = -1000;
+    // let scalemax = -1000;
+    // let scalemin = 1000;
 
-    if (value > valuemax){
-        value = valuemax
-    } else if(value < valuemin){
-        value = valuemin
-    }
+    // if (value > valuemax){
+    //     value = valuemax
+    // } else if(value < valuemin){
+    //     value = valuemin
+    // }
 
-    let vPerc = (value - valuemin) / (valuemax - valuemin);
-    let bigSpan = vPerc * (scalemax - scalemin);
+    // let vPerc = (value - valuemin) / (valuemax - valuemin);
+    // let bigSpan = vPerc * (scalemax - scalemin);
 
-    let retVal = scalemin + bigSpan;
+    // let retVal = scalemin + bigSpan;
 
-    return retVal;
+    // return retVal;
 }
 
 pitch_controller.setTransferFunction(transferFunction);
@@ -142,6 +145,10 @@ backLeft.pwmFrequency(pwmFrequency);
 
 backRight.pwmRange(pwmMaxRange + 500);
 backRight.pwmFrequency(pwmFrequency);
+
+naze.pwmRange(2000);
+naze.pwmFrequency(1000);
+naze.pwmWrite(1350);
 
 frontLeft.pwmWrite(0);
 frontRight.pwmWrite(0);
@@ -183,10 +190,10 @@ setTimeout(function() {
                         setTimeout(function() {
                             backRight.pwmWrite(1000);
                             started = true;
-                        }, 1000);
-                    }, 1000);
-                }, 1000);
-            }, 1000);
+                        }, 100);
+                    }, 100);
+                }, 100);
+            }, 100);
         }, 1500);
     
         console.log("Yaw offset: " + yaw_offset);        
@@ -194,7 +201,7 @@ setTimeout(function() {
 }, 1000);  
 
 // console.log("starting calibration...");
-// mpu.calibrate();
+ //mpu.calibrate();
 // console.log("calibration ended...");
 
 // Initialize MPU6050
@@ -206,82 +213,112 @@ if (mpu.initialize()) {
 
     // PID loop
     var mainFunction = function () {
-         let rotation = mpu.getRotation();
-         let attitude = mpu.getAttitude();
+        try{
+            let rotation = mpu.getRotation();
+            let attitude = mpu.getAttitude();
+            
+            let tNow = Date.now();
+            
+            if(tNow - tControl >= 1000){
+                let dt = tNow - tControl;
 
-         if(attitude.pitch != previousAttitude.pitch || attitude.roll != previousAttitude.roll){
-             updateRateCount++;
-         }
+                console.log("MPU Frequency:" + updateRateCount / (dt / 1000) + " updt:" + updateRateCount + " dt:" + dt + " p:" + attitude.pitch + " r:" + attitude.roll + " y:" + attitude.yaw);
+                console.log("Main loop Frequency:" + mainLoopRateCount / (dt / 1000) + " updt:" + mainLoopRateCount);
 
-         previousAttitude = attitude;
+                // When the mpu goes bananas, we should stop the loop
+                if(mainLoopRateCount == 0 || updateRateCount == 0){
+                    console.log("wrong");
 
-         mainLoopRateCount++;
-         
-         let tNow = Date.now();
-
-         if(tNow - tControl >= 3000){
-            let dt = tNow - tControl;
-
-            console.log("MPU Frequency:" + updateRateCount / (dt / 1000) + " updt:" + updateRateCount + " dt:" + dt + " p:" + attitude.pitch + " r:" + attitude.roll + " y:" + attitude.yaw);
-            console.log("Main loop Frequency:" + mainLoopRateCount / (dt / 1000) + " updt:" + mainLoopRateCount);
-
-            tControl = tNow;
-            updateRateCount = 0;
-            mainLoopRateCount = 0;
-         }
-
-        // Only set motors after startup
-        if (started && updateRequired) {
-            // Inverted pitch and roll due to physical disposition of MPU6050
-            let adjusted_pitch = attitude.pitch - pitch_offset;
-            let adjusted_roll = (attitude.roll - roll_offset) * -1;
-            let adjusted_yaw = (attitude.yaw - yaw_offset);
-
-            let delta_yaw = adjusted_yaw - current_yaw;
-
-            // if(delta_yaw < 0){
-            //     delta_yaw *= -1;
-            // }
-
-            // if(delta_yaw > 120){
-            //     adjusted_yaw = current_yaw;
-            // }
-
-            //console.log("pitch %d roll %d yaw %d", adjusted_pitch, adjusted_roll, adjusted_yaw);
-
-            current_yaw = adjusted_yaw;
-
-            let throttleOutput = (pwmMaxRange - pwmMinRange) * throttle / 100.0;
-
-            var pitchOutput = pitch_controller.update(adjusted_pitch);
-            var rollOutput = roll_controller.update(adjusted_roll);
-            var yawOutput = yaw_controller.update(adjusted_yaw);
-
-            frontRightOutput = rollOutput + pitchOutput + yawOutput;
-            backRightOutput = rollOutput - pitchOutput - yawOutput;
-
-            frontLeftOutput = -rollOutput + pitchOutput - yawOutput;
-            backLeftOutput = -rollOutput - pitchOutput + yawOutput;
-
-            //console.log("fl %d fr %d bl %d br %d", frontLeftOutput, frontRightOutput, backLeftOutput, backRightOutput);
-
-            try {
-                // If no throttle, dont change motors
-                if (throttleOutput > 0) {
-                    frontLeft.pwmWrite(FilterOutput(frontLeftOutput + pwmMinRange + throttleOutput));
-                    frontRight.pwmWrite(FilterOutput(frontRightOutput + pwmMinRange + throttleOutput));
-                    backLeft.pwmWrite(FilterOutput(backLeftOutput + pwmMinRange + throttleOutput));
-                    backRight.pwmWrite(FilterOutput(backRightOutput + pwmMinRange + throttleOutput));
-                } else {
-                    frontLeft.pwmWrite(1000);
-                    frontRight.pwmWrite(1000);
-                    backLeft.pwmWrite(1000);
-                    backRight.pwmWrite(1000);
+                    frontLeft.pwmWrite(0);
+                    frontRight.pwmWrite(0);
+                    backLeft.pwmWrite(0);
+                    backRight.pwmWrite(0);
+                    return;
                 }
-            } catch (err) {
-                console.error('Error Writing PWM:' + err + " Values: fl %d fr %d bl %d br %d", FilterOutput(frontLeftOutput + pwmMinRange + throttleOutput), FilterOutput(frontRightOutput + pwmMinRange + throttleOutput), FilterOutput(backLeftOutput + pwmMinRange + throttleOutput), FilterOutput(backRightOutput + pwmMinRange + throttleOutput));
+
+                tControl = tNow;
+                updateRateCount = 0;
+                mainLoopRateCount = 0;
             }
-        }
+
+            // Only do anything if we got a differente value from gyro
+            if(attitude.pitch != previousAttitude.pitch || attitude.roll != previousAttitude.roll){
+                updateRateCount++;
+                previousAttitude = attitude;
+
+                mainLoopRateCount++;
+
+                // Only set motors after startup
+                if (started && updateRequired) {
+                    // Inverted pitch and roll due to physical disposition of MPU6050
+                    let adjusted_pitch = attitude.pitch - pitch_offset;
+                    let adjusted_roll = (attitude.roll - roll_offset) * -1;
+                    let adjusted_yaw = attitude.yaw - yaw_offset;
+
+                    let delta_yaw = adjusted_yaw - current_yaw;
+
+                    // if(delta_yaw < 0){
+                    //     delta_yaw *= -1;
+                    // }
+
+                    // if(delta_yaw > 120){
+                    //     adjusted_yaw = current_yaw;
+                    // }
+
+                    //console.log("pitch %d roll %d yaw %d", adjusted_pitch, adjusted_roll, adjusted_yaw);
+
+                    current_yaw = adjusted_yaw;
+
+                    let throttleOutput = (pwmMaxRange - pwmMinRange) * throttle / 100.0;
+
+                    if(throttleOutput > 48){
+                        
+                    }
+
+                    var pitchOutput = pitch_controller.update(adjusted_pitch);
+                    var rollOutput = roll_controller.update(adjusted_roll);
+                    var yawOutput = yaw_controller.update(adjusted_yaw);
+
+                    frontRightOutput = rollOutput + pitchOutput + yawOutput;
+                    backRightOutput = rollOutput - pitchOutput - yawOutput;
+
+                    frontLeftOutput = -rollOutput + pitchOutput - yawOutput;
+                    backLeftOutput = -rollOutput - pitchOutput + yawOutput;
+
+                    //console.log("fl %d fr %d bl %d br %d", frontLeftOutput, frontRightOutput, backLeftOutput, backRightOutput);
+
+                    try {
+                        // If no throttle, dont change motors
+                        if (throttleOutput > 0) {
+                            frontLeft.pwmWrite(FilterOutput(frontLeftOutput + pwmMinRange + throttleOutput));
+                            frontRight.pwmWrite(FilterOutput(frontRightOutput + pwmMinRange + throttleOutput));
+                            backLeft.pwmWrite(FilterOutput(backLeftOutput + pwmMinRange + throttleOutput));
+                            backRight.pwmWrite(FilterOutput(backRightOutput + pwmMinRange + throttleOutput));
+                        } else {
+                            frontLeft.pwmWrite(1000);
+                            frontRight.pwmWrite(1000);
+                            backLeft.pwmWrite(1000);
+                            backRight.pwmWrite(1000);
+                        }
+                    } catch (err) {
+                        console.error('Error Writing PWM:' + err + " Values: fl %d fr %d bl %d br %d", FilterOutput(frontLeftOutput + pwmMinRange + throttleOutput), FilterOutput(frontRightOutput + pwmMinRange + throttleOutput), FilterOutput(backLeftOutput + pwmMinRange + throttleOutput), FilterOutput(backRightOutput + pwmMinRange + throttleOutput));
+                        throw err;
+                    }                    
+            
+                }
+            }
+        } catch (error) {
+            console.error('GENERAL FAILURE:' + err);
+            frontLeft.pwmWrite(0);
+            frontRight.pwmWrite(0);
+            backLeft.pwmWrite(0);
+            backRight.pwmWrite(0);
+
+            // When the mpu goes bananas, we should stop the loop
+            clearInterval(mainFunction);
+
+            throw error;
+        }        
     }
 
     var adjustYaw = function(){
@@ -291,7 +328,7 @@ if (mpu.initialize()) {
         yaw_controller.reset();
     }
 
-    setInterval(adjustYaw, 1000);
+    //setInterval(adjustYaw, 2000);
 
     timer.setInterval(mainFunction,"", updateFrequency_us, function(err) {
         if(err) {
@@ -314,6 +351,8 @@ if (mpu.initialize()) {
             }
 
             throttle = localThrottle;
+
+            // naze.pwmWrite(2000 * throttle / 100.0);
 
             if (!updateRequired) {
                 throttle = 0;
