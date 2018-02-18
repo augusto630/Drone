@@ -28,15 +28,20 @@
     "dgram": "^1.0.1",
     "fs": "0.0.1-security",
     "http": "0.0.0",
+    "i2c-bus": "^1.2.3",
+    "i2c-mpu6050": "^2.2.1",
     "math": "0.0.3",
     "memory-usage": "^1.2.1",
     "mpu6050": "^0.1.2",
     "mpu6050-dmp": "0.0.6",
+    "mpu6050-wiringpi": "0.0.2",
     "nanotimer": "^0.3.15",
     "node-gyp": "^3.6.2",
     "node-priority": "^0.1.5",
     "pigpio": "^0.6.1",
     "semver": "^5.4.1",
-    "url": "^0.11.0"
+    "socket.io": "^2.0.4",
+    "url": "^0.11.0",
+    "ws": "^4.0.0"
   }
 }
