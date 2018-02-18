@@ -40,6 +40,12 @@ class Controller {
     this.sum_error = 0;
     this.control_count = 0;
 
+    this.currentP = 0;
+    this.currentI = 0;
+    this.currentD = 0;
+
+    this.thrt = 0;
+
     this.transferFunction = function(value){
       return value;
     }
@@ -73,16 +79,8 @@ class Controller {
 
     let error = (this.target - this.currentValue);
 
-    // Deadband
-    let deadband = 0.02
-    if (error < 0 && error > -deadband) {
-      error = 0;
-      this.sumError = 0;
-    }
-    else if (error > 0 && error < deadband) {
-      error = 0;
-      this.sumError = 0;
-    }
+    let dError = (error - this.lastError) / dt;
+    this.lastError = error;
 
     this.sumError = this.sumError + error * dt;
     if (this.i_max > 0 && Math.abs(this.sumError) > this.i_max) {
@@ -90,11 +88,26 @@ class Controller {
       this.sumError = sumSign * this.i_max;
     }
 
-    let dError = (error - this.lastError) / dt;
-    this.lastError = error;
+    // Deadband only on P gain
+    let deadband = 0.2
+    if (error < 0 && error > -deadband) {
+      error = 0;
+    }
+    else if (error > 0 && error < deadband) {
+      error = 0;
+    }
 
     let pidOutput = (this.k_p * error) + (this.k_i * this.sumError) + (this.k_d * dError);
-    pidOutput = this.transferFunction(pidOutput)
+
+    this.currentP = (this.k_p * error);
+    this.currentI = (this.k_i * this.sumError);
+    this.currentD = (this.k_d * dError);
+
+    pidOutput = this.transferFunction(pidOutput);
+
+    // if(Date.now() - this.ltd > 100){
+    //   console.log(this.flag + ",%d,%d,%d,%d,%d,%d,%d,%d", currentTime, (this.k_p * error), (this.k_i * this.sumError), (this.k_d * dError), pidOutput, this.target, this.currentValue, this.thrt);
+    // }
 
     // this.sum_pv += this.currentValue;
     // this.sum_setpoint += this.target;
@@ -125,6 +138,18 @@ class Controller {
     return pidOutput;
   }
 
+  getCurrentP(){
+    return this.currentP;
+  }
+
+  getCurrentI(){
+    return this.currentI;
+  }
+
+  getCurrentD(){
+    return this.currentD;
+  }
+
   updateKp(lkp) {
     this.k_p = lkp
   }
@@ -135,6 +160,11 @@ class Controller {
 
   updateKd(lkd) {
     this.k_d = lkd
+  }
+
+  // Debug only
+  updateThrottle(thrt){
+    this.thrt = thrt;
   }
 
   reset() {
