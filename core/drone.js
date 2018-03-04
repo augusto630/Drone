@@ -1,92 +1,26 @@
 "use strict";
 
-var mpu = require('mpu6050-dmp')
 var math = require('math');
 var url = require('url');
 var pigpio = require('pigpio');
-var Pid = require('./pid');
 var NanoTimer = require('nanotimer');
 var timer = new NanoTimer();
+
+var Attitude = require('./attitude');
+var Pid = require('./pid');
 var httphandler = require("./httphandler");
 
-var AHRS = require('ahrs');
-var madgwick = new AHRS({
-
-    sampleInterval: 400, 
-
-    /*
-    * Choose from the `Madgwick` or `Mahony` filter.
-    */
-    algorithm: 'Madgwick',
-
-    /*
-     * The filter noise value, smaller values have
-     * smoother estimates, but have higher latency.
-     * This only works for the `Madgwick` filter.
-     */
-    beta: 100,
-
-    /*
-     * The filter noise values for the `Mahony` filter.
-     */
-    kp: 0.1,
-    ki: 0.0025
-});
-
-const M_PI = 3.14159265359
-const accel_convert = 16384; // 250 degrees per second
-const gyro_convert = 131; // 2g per second
-
-// const accel_convert = 2048; // 2000 degrees per second
-// const gyro_convert = 16.4; // 16g per second
+var attitude = new Attitude();
 
 var send_data_control = 0;
 var time_control = 0
 var pitch = 0, roll = 0;
 var tNow;
 
-var to_degree = function (radian) {
-    return radian * (180 / M_PI);
-}
-
-var to_radian = function (degree) {
-    return degree * (M_PI / 180);
-}
-
-var gyro_to_degree = function (raw_gyro) {
-    return raw_gyro / gyro_convert;
-}
-
-var accel_to_degree = function (raw_accel) {
-    return raw_accel / accel_convert;
-}
-
-var gyro_to_radian = function (raw_gyro) {
-    return to_radian(gyro_to_degree(raw_gyro));
-}
-
-var accel_to_radian = function (raw_accel) {
-    return to_radian(accel_to_degree(raw_accel));
-}
-
-var l_motion6;
 var mainLoopRateCount = 0;
 var updateRateCount = 0;
 
-var driftTimeControl;
-
-var yaw_drift_rate_s = 0.0020;
-var yaw_sum_drift = 0;
 var yaw_drift = 0;
-
-var init_yaw_drift;
-
-var h = -99999;
-var l = 99999;
-var mean = 0;
-var cc = 0;
-var cca = 0;
-var ccsum = 0;
 
 // Frequency in hz
 const pwmFrequency = 400;
@@ -94,7 +28,7 @@ const updateFrequency_us = "2.5m";
 
 // Max range of pwm in µs
 const pwmMaxRange = 2000;
-const pwmMinRange = 1040;
+const pwmMinRange = 1100;
 const pwmRange = pwmMaxRange - pwmMinRange
 
 const lmax = 1000;
@@ -104,12 +38,17 @@ var ki = 0;
 var kd = 0;
 var tpa = 0.75;
 
+var currentFR = 0;
+var currentFL = 0;
+var currentBR = 0;
+var currentBL = 0;
+
 // k_p: 2.144,
 // k_i: 0.0012,
 // k_d: 300,
 
 var pitch_controller = new Pid({
-    k_p: 1.1,
+    k_p: 0.1,
     k_i: 0,
     k_d: 0,
     i_max: lmax,
@@ -117,7 +56,7 @@ var pitch_controller = new Pid({
 });
 
 var roll_controller = new Pid({
-    k_p: 1.1,
+    k_p: 0.1,
     k_i: 0,
     k_d: 0,
     i_max: lmax,
@@ -126,7 +65,7 @@ var roll_controller = new Pid({
 
 
 var yaw_controller = new Pid({
-    k_p: 1.1,
+    k_p: 0.1,
     k_i: 0,
     k_d: 0,
     i_max: lmax,
@@ -135,14 +74,13 @@ var yaw_controller = new Pid({
 
 // Motor definition
 try {
-    var frontLeft = pigpio.Gpio(17, pigpio.Gpio.OUTPUT); // Amarelo
-    var frontRight = pigpio.Gpio(4, pigpio.Gpio.OUTPUT); // Verde
-    var backLeft = pigpio.Gpio(27, pigpio.Gpio.OUTPUT); // Laranja
-    var backRight = pigpio.Gpio(22, pigpio.Gpio.OUTPUT); // Azul  
+    var frontLeft = pigpio.Gpio(27, pigpio.Gpio.OUTPUT);
+    var frontRight = pigpio.Gpio(18, pigpio.Gpio.OUTPUT);
+    var backRight = pigpio.Gpio(4, pigpio.Gpio.OUTPUT);
+    var backLeft = pigpio.Gpio(17, pigpio.Gpio.OUTPUT); 
 } catch (error) {
     console.log("Error initializing GPIO, retrying...");
 }
-
 
 // Global variables
 var throttle = 0.0;
@@ -160,13 +98,14 @@ var backLeftOutput = 0;
 var backRightOutput = 0;
 
 function FilterOutput(output) {
-    let local = 0;
-    if (output < pwmMinRange) {
-        local = pwmMinRange + 20;
-    } else if (output > pwmMaxRange) {
-        local = pwmMaxRange - 200;
-    } else {
-        local = output;
+    let local = output;
+
+    if(local > pwmRange){
+        local = pwmRange;
+    }
+
+    if(local < 0){
+        local = 0;
     }
 
     return parseInt(local);
@@ -184,7 +123,13 @@ var safeRange = function (value, max, min) {
 }
 
 // No transfer function is required
-var transferFunction = function (value) {
+var transferFunction = function (value) {    
+    var maxAngle = 400;
+
+    if(Math.abs(value) > maxAngle){
+        var signal = value > 0? 1: -1;
+        value = maxAngle * signal;
+    }        
     return value;
 }
 
@@ -250,110 +195,78 @@ setTimeout(function () {
     }, 1000);
 }, 1000);
 
+// Send log
+var send_count = 0;
+var data_sum = {
+    attd: {
+        pitch: 0,
+        roll: 0,
+        yaw: 0
+    },
+    ppid: {
+        p: 0,
+        i: 0,
+        d: 0
+    },
+    rpid: {
+        p: 0,
+        i: 0,
+        d: 0
+    },
+    ypid: {
+        p: 0,
+        i: 0,
+        d: 0
+    },
+    motor: {
+        fl: 0,
+        fr: 0,
+        bl: 0,
+        br: 0
+    }
+}
+
 // Initialize MPU6050
-if (mpu.initializeRaw()) {
+if (attitude.initialize()) {
     var updateRateCount = 0;
     var mainLoopRateCount = 0;
-    var previousMotion6;
+    var previousMotion;
     var ahrsTime;
-
-    // for (let i = 0; i < 10000; i++) {
-    //     madgwick.update(
-    //         0.000000000001,
-    //         0.000000000001,
-    //         -0.000000000001,
-    //         0.000000000001,
-    //         0.000000000001,
-    //         1.00000000001,
-    //         undefined, undefined, undefined, 2.5);
-    // }
 
     // PID loop
     var mainFunction = function () {
         try {
-            let motion6 = mpu.getRawMotion6();
+            let motion = attitude.getAttitude();
 
             mainLoopRateCount++;
 
-            if (!previousMotion6) {
-                previousMotion6 = motion6;
+            if (!previousMotion) {
+                previousMotion = motion;
             }
 
             // Only do anything if we got a differente value from gyro
-            if (motion6.gyro_x != previousMotion6.gyro_x ||
-                motion6.gyro_y != previousMotion6.gyro_y ||
-                motion6.gyro_z != previousMotion6.gyro_z ||
-                motion6.accel_x != previousMotion6.accel_x ||
-                motion6.accel_y != previousMotion6.accel_y ||
-                motion6.accel_z != previousMotion6.accel_z) {
+            if (motion.yaw != previousMotion.yaw ||
+                motion.roll != previousMotion.roll ||
+                motion.pitch != previousMotion.pitch) {
 
                 updateRateCount++;
-                previousMotion6 = motion6;
+                previousMotion = motion;
 
-                if (!ahrsTime) {
-                    ahrsTime = Date.now();
-                }
-
-                madgwick.update(
-                    gyro_to_radian(motion6.gyro_x),
-                    gyro_to_radian(motion6.gyro_y),
-                    gyro_to_radian(motion6.gyro_z),
-                    accel_to_radian(motion6.accel_x),
-                    accel_to_radian(motion6.accel_y),
-                    accel_to_radian(motion6.accel_z)
-                );
-
-                ahrsTime = Date.now();
-
-                let attitude = madgwick.getEulerAngles();
-
-                const roll_offset = 3.13;
-
-                attitude.pitch = to_degree(attitude.pitch);
-
-                if (attitude.roll < 0) attitude.roll = attitude.roll + roll_offset;
-                else attitude.roll = attitude.roll - roll_offset;
-
-                attitude.roll = to_degree(attitude.roll) * -1;
-                attitude.yaw = to_degree(attitude.heading);
-
+                let attitude = motion;
                 tNow = Date.now();
 
                 if (tNow - time_control >= 1000) {
-                    if (init_yaw_drift && tNow - driftTimeControl > 10000) {
-                        cca++;
-                        ccsum += attitude.heading - init_yaw_drift;
-                    }
-
-                    yaw_sum_drift = (Date.now() - driftTimeControl) * (((yaw_drift_rate_s) / 1000));
-
                     let dt = tNow - time_control;
 
                     console.log("Main loop Frequency:" + mainLoopRateCount / (dt / 1000) + " updt:" + mainLoopRateCount);
                     console.log("IMU update Frequency:" + updateRateCount / (dt / 1000) + " updt:" + updateRateCount);
-                    // console.log("   x:" + attitude.roll); 
-                    // console.log("   y:" + attitude.pitch); 
-                    // console.log("   z:" + attitude.yaw);
+                    console.log("Yaw Drift/s:" + (motion.yaw - yaw_drift));
 
-                    // console.log("raw_gyro x:" + motion6.gyro_x);
-                    // console.log("raw_gyro y:" + motion6.gyro_y);
-                    // console.log("raw_gyro z:" + motion6.gyro_z);
-                    // console.log("raw_accel x:" + motion6.accel_x);
-                    // console.log("raw_accel y:" + motion6.accel_y);
-                    // console.log("raw_accel z:" + motion6.accel_z);
+                    yaw_drift = motion.yaw;
 
-                    // console.log("deg_raw_gyro x:" + gyro_to_degree(motion6.gyro_x));
-                    // console.log("deg_raw_gyro y:" + gyro_to_degree(motion6.gyro_y));
-                    // console.log("deg_raw_gyro z:" + gyro_to_degree(motion6.gyro_z));
-                    // console.log("deg_raw_accel x:" + accel_to_degree(motion6.accel_x));
-                    // console.log("deg_raw_accel y:" + accel_to_degree(motion6.accel_y));
-                    // console.log("deg_raw_accel z:" + accel_to_degree(motion6.accel_z));
-
-                    init_yaw_drift = attitude.heading;
                     time_control = tNow;
                     mainLoopRateCount = 0;
                     updateRateCount = 0;
-                    yaw_drift = 0;
                 }
 
                 // Only set motors after startup
@@ -364,60 +277,110 @@ if (mpu.initializeRaw()) {
                         yaw_offset = attitude.yaw;
                     }
 
-                    // Inverted pitch and roll due to physical disposition of MPU6050
+                    // Inverted roll due to physical disposition of MPU6050
                     let adjusted_pitch = attitude.pitch;
-                    let adjusted_roll = attitude.roll;
+                    let adjusted_roll = -attitude.roll;
                     let adjusted_yaw = attitude.yaw;
 
                     let throttleOutput = (pwmMaxRange - pwmMinRange) * throttle / 100.0;
 
+                    // Reset values when threshold is crossed, it means that the device is f*cked
+                    // if (Math.abs(adjusted_pitch) > 45 || Math.abs(adjusted_roll) > 45) {
+                    //     adjusted_pitch = 0;
+                    //     adjusted_roll = 0;
+                    // }
+
+                    var pitchOutput = pitch_controller.update(adjusted_pitch, throttle);
+                    var rollOutput = roll_controller.update(adjusted_roll, throttle);
+                    var yawOutput = yaw_controller.update(adjusted_yaw, throttle);
+
+                    frontRightOutput = -rollOutput - pitchOutput - yawOutput;
+                    backRightOutput = -rollOutput + pitchOutput + yawOutput;
+
+                    frontLeftOutput = rollOutput - pitchOutput + yawOutput;
+                    backLeftOutput = rollOutput + pitchOutput - yawOutput;
+
+                    frontRightOutput = FilterOutput(frontRightOutput + throttleOutput) + pwmMinRange;
+                    frontLeftOutput = FilterOutput(frontLeftOutput + throttleOutput) + pwmMinRange;
+                    backRightOutput = FilterOutput(backRightOutput + throttleOutput) + pwmMinRange;
+                    backLeftOutput = FilterOutput(backLeftOutput + throttleOutput) + pwmMinRange;
+
+                    send_count++;
+
+                    data_sum.attd.pitch = adjusted_pitch;
+                    data_sum.attd.roll = adjusted_roll;
+                    data_sum.attd.yaw = adjusted_yaw;
+
+                    data_sum.ppid.p = pitch_controller.getCurrentP();
+                    data_sum.ppid.i = pitch_controller.getCurrentI();
+                    data_sum.ppid.d = pitch_controller.getCurrentD();
+
+                    data_sum.rpid.p = roll_controller.getCurrentP();
+                    data_sum.rpid.i = roll_controller.getCurrentI();
+                    data_sum.rpid.d = roll_controller.getCurrentD();
+
+                    data_sum.ypid.p = yaw_controller.getCurrentP();
+                    data_sum.ypid.i = yaw_controller.getCurrentI();
+                    data_sum.ypid.d = yaw_controller.getCurrentD();
+
+                    data_sum.motor.fl = frontLeftOutput;
+                    data_sum.motor.fr = frontRightOutput;
+                    data_sum.motor.bl = backLeftOutput;
+                    data_sum.motor.br = backRightOutput;
+
+                    send_count = 1;
+
                     if (tNow - send_data_control >= 100) {
                         var data = {
                             attd: {
-                                pitch: adjusted_pitch,
-                                roll: adjusted_roll,
-                                yaw: adjusted_yaw
+                                pitch: data_sum.attd.pitch / send_count,
+                                roll: data_sum.attd.roll / send_count,
+                                yaw: data_sum.attd.yaw / send_count
                             },
                             ppid: {
-                                p: pitch_controller.getCurrentP(),
-                                i: pitch_controller.getCurrentI(),
-                                d: pitch_controller.getCurrentD()
+                                p: data_sum.ppid.p / send_count,
+                                i: data_sum.ppid.i / send_count,
+                                d: data_sum.ppid.d / send_count
                             },
                             rpid: {
-                                o: roll_controller.getCurrentP(),
-                                i: roll_controller.getCurrentI(),
-                                d: roll_controller.getCurrentD()
+                                p: data_sum.rpid.p / send_count,
+                                i: data_sum.rpid.i / send_count,
+                                d: data_sum.rpid.d / send_count
                             },
                             ypid: {
-                                p: yaw_controller.getCurrentP(),
-                                i: yaw_controller.getCurrentI(),
-                                d: yaw_controller.getCurrentD()
+                                p: data_sum.ypid.p / send_count,
+                                i: data_sum.ypid.i / send_count,
+                                d: data_sum.ypid.d / send_count
+                            },
+                            motor: {
+                                fl: data_sum.motor.fl / send_count,
+                                fr: data_sum.motor.fr / send_count,
+                                bl: data_sum.motor.bl / send_count,
+                                br: data_sum.motor.br / send_count
                             }
                         }
-    
+
+                        // console.log(data_sum);
+
                         httphandler.send(JSON.stringify(data));
                         send_data_control = Date.now();
+                        send_count = 0;
                     }
 
-                    var pitchOutput = pitch_controller.update(adjusted_pitch);
-                    var rollOutput = roll_controller.update(adjusted_roll);
-                    var yawOutput = yaw_controller.update(adjusted_yaw);
-
-                    frontRightOutput = rollOutput + pitchOutput + yawOutput;
-                    backRightOutput = rollOutput - pitchOutput - yawOutput;
-
-                    frontLeftOutput = -rollOutput + pitchOutput - yawOutput;
-                    backLeftOutput = -rollOutput - pitchOutput + yawOutput;
-
-                    //console.log("fl %d fr %d bl %d br %d", frontLeftOutput, frontRightOutput, backLeftOutput, backRightOutput);
-
                     try {
-                        // If no throttle, dont change motors
+                        // If no throttle, dont change motors, if no change in values, dont change motors
                         if (throttleOutput > 0) {
-                            frontLeft.pwmWrite(FilterOutput(frontLeftOutput + pwmMinRange + throttleOutput));
-                            frontRight.pwmWrite(FilterOutput(frontRightOutput + pwmMinRange + throttleOutput));
-                            backLeft.pwmWrite(FilterOutput(backLeftOutput + pwmMinRange + throttleOutput));
-                            backRight.pwmWrite(FilterOutput(backRightOutput + pwmMinRange + throttleOutput));
+                            if (frontLeftOutput != currentFL ||
+                                frontRightOutput != currentFR ||
+                                backRightOutput != currentBR ||
+                                backLeftOutput != currentBL) {
+                                frontLeft.pwmWrite(frontLeftOutput);
+                                frontRight.pwmWrite(frontRightOutput);
+                                backLeft.pwmWrite(backLeftOutput);
+                                backRight.pwmWrite(backRightOutput);
+
+                                // console.error(" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaValues: fl %d fr %d bl %d br %d", FilterOutput(frontLeftOutput + pwmMinRange + throttleOutput), FilterOutput(frontRightOutput + pwmMinRange + throttleOutput), FilterOutput(backLeftOutput + pwmMinRange + throttleOutput), FilterOutput(backRightOutput + pwmMinRange + throttleOutput));
+                            }
                         } else {
                             frontLeft.pwmWrite(1000);
                             frontRight.pwmWrite(1000);
@@ -429,6 +392,10 @@ if (mpu.initializeRaw()) {
                         throw err;
                     }
 
+                    currentFL = frontLeftOutput;
+                    currentFR = frontRightOutput;
+                    currentBL = backLeftOutput;
+                    currentBR = backRightOutput;
                 }
             }
         } catch (error) {
@@ -504,11 +471,11 @@ if (mpu.initializeRaw()) {
 
             let pGain = parseFloat(params.pgain);
 
-            if (params.roll)
-                roll_controller.updateKp(pGain);
-
             if (params.pitch)
                 pitch_controller.updateKp(pGain);
+
+            if (params.roll)
+                roll_controller.updateKp(pGain);
 
             if (params.yaw)
                 yaw_controller.updateKp(pGain);
@@ -519,11 +486,11 @@ if (mpu.initializeRaw()) {
 
             let iGain = parseFloat(params.igain);
 
-            if (params.roll)
-                roll_controller.updateKi(iGain);
-
             if (params.pitch)
                 pitch_controller.updateKi(iGain);
+
+            if (params.roll)
+                roll_controller.updateKi(iGain);
 
             if (params.yaw)
                 yaw_controller.updateKi(iGain);
@@ -534,11 +501,11 @@ if (mpu.initializeRaw()) {
 
             let dGain = parseFloat(params.dgain);
 
-            if (params.roll)
-                roll_controller.updateKd(dGain);
-
             if (params.pitch)
                 pitch_controller.updateKd(dGain);
+
+            if (params.roll)
+                roll_controller.updateKd(dGain);
 
             if (params.yaw)
                 yaw_controller.updateKd(dGain);
